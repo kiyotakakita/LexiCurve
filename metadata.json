@@ -1,0 +1,6 @@
+{
+  "name": "LexiCurve",
+  "description": "新造語・バズワードのイノベーター理論浸透度と源流ツリーを可視化するダッシュボード",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
