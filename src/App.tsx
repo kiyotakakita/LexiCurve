@@ -28,6 +28,8 @@ import { AnalyzingOverlay } from './components/AnalyzingOverlay';
 import { WatchlistDrawer } from './components/WatchlistDrawer';
 import { TrendingScanModal } from './components/TrendingScanModal';
 import { TermDetailModal } from './components/TermDetailModal';
+import { ApiKeyModal } from './components/ApiKeyModal';
+import { analyzeWordDirect, scanTrendingDirect, getClientGeminiApiKey } from './services/geminiClient';
 
 const LOCAL_STORAGE_WATCHLIST_KEY = 'lexicurve_watchlist_ids_v1';
 const LOCAL_STORAGE_WORDS_KEY = 'lexicurve_all_words_v2';
@@ -103,6 +105,8 @@ export default function App() {
   const [theoryModalTab, setTheoryModalTab] = useState<'theory' | 'chasm'>('theory');
   const [watchlistOpen, setWatchlistOpen] = useState<boolean>(false);
   const [detailModalTerm, setDetailModalTerm] = useState<TermData | null>(null);
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
+  const [hasGeminiApiKey, setHasGeminiApiKey] = useState<boolean>(() => Boolean(getClientGeminiApiKey()));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Global Escape key listener to close all popups, drawers, and modals on screen
@@ -112,49 +116,33 @@ export default function App() {
         setDetailModalTerm(null);
         setTheoryModalOpen(false);
         setWatchlistOpen(false);
+        setApiKeyModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // Scan trending buzzwords via AI
+  // Scan trending buzzwords directly from browser (via Gemini or curated real-time dataset)
   const handleScanTrending = async () => {
     setIsScanningTrending(true);
     const startTime = Date.now();
 
     try {
-      const response = await fetch('/api/scan-trending-words', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // 1. Directly call client-side scan service
+      const { terms: trendingTerms, source } = await scanTrendingDirect();
 
-      let trendingTerms: TermData[] = [];
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && Array.isArray(data.terms)) {
-          trendingTerms = data.terms.map((t: TermData) => ({
-            ...t,
-            isCustom: true,
-            isTrending: true,
-          }));
-        }
-      }
-
-      // Ensure minimum 2.3 seconds for scanning animation to play smoothly
+      // Ensure minimum 2.0 seconds for scanning radar animation to play smoothly
       const elapsed = Date.now() - startTime;
-      if (elapsed < 2300) {
-        await new Promise((r) => setTimeout(r, 2300 - elapsed));
+      if (elapsed < 2000) {
+        await new Promise((r) => setTimeout(r, 2000 - elapsed));
       }
 
-      if (trendingTerms.length > 0) {
-        // Normalize each term ensuring all bell curve attributes are valid
-        const normalizedTrending = trendingTerms.map((t) => normalizeTermData(t, t.name));
-
+      if (trendingTerms && trendingTerms.length > 0) {
         // Merge into words state, avoiding duplicates
         setWords((prev) => {
           const newMap = new Map<string, TermData>();
-          normalizedTrending.forEach((t) => newMap.set(t.id, t));
+          trendingTerms.forEach((t) => newMap.set(t.id, t));
           prev.forEach((t) => {
             if (!newMap.has(t.id)) newMap.set(t.id, t);
           });
@@ -163,16 +151,17 @@ export default function App() {
 
         // Switch to 'all' so all newly scanned trending terms are immediately visible
         setSelectedCategory('all');
-        const newIds = normalizedTrending.map((t) => t.id);
+        const newIds = trendingTerms.map((t) => t.id);
         setHighlightedTermIds(newIds);
 
         // Select the first trending term (e.g. Vibe Coding)
-        if (normalizedTrending[0]) {
-          setSelectedTermId(normalizedTrending[0].id);
+        if (trendingTerms[0]) {
+          setSelectedTermId(trendingTerms[0].id);
         }
 
+        const sourceLabel = source === 'gemini' ? 'Gemini AIリアルタイム分析' : 'トレンドキュレーション';
         setToastMessage(
-          `🔥 最新の急上昇ワード ${normalizedTrending.length} 件（Vibe Coding, AI Slop, ブレインロット等）をAIスキャンし、ベルカーブ上に一括プロットしました！`
+          `🔥 最新の急上昇ワード ${trendingTerms.length} 件（${sourceLabel}）をスキャンし、ベルカーブ上に一括プロットしました！`
         );
         setTimeout(() => setToastMessage(null), 6000);
 
@@ -248,46 +237,29 @@ export default function App() {
     setIsAnalyzing(true);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      // 1. & 3. Requirements: Direct browser Gemini call with instant dynamic fallback if key missing or error
+      const { term, source } = await analyzeWordDirect(cleanWord);
 
-      const response = await fetch('/api/analyze-word', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word: cleanWord }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      // Formally add to words state
+      setWords((prev) => [term, ...prev.filter((w) => w.id !== term.id)]);
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.term) {
-          // Normalize with guaranteed ID, progress, score, position, stage, and phase
-          const newWord = normalizeTermData(result.term, cleanWord);
-          
-          // Formally add to words state: setWords(prev => [newWord, ...prev])
-          setWords((prev) => [newWord, ...prev.filter((w) => w.id !== newWord.id)]);
-          
-          // Auto-switch to 'all' so the new term is immediately visible on the bell curve
-          setSelectedCategory('all');
-          setSelectedTermId(newWord.id);
-          setHighlightedTermIds([newWord.id]);
+      // Auto-switch to 'all' so the new term is immediately visible on the bell curve
+      setSelectedCategory('all');
+      setSelectedTermId(term.id);
+      setHighlightedTermIds([term.id]);
 
-          setIsAnalyzing(false);
-          const stageName = STAGES[newWord.stage]?.name || 'イノベーター理論';
-          setToastMessage(
-            `「${newWord.name}」を分析し、ベルカーブ上に正式追加しました！（${stageName} / 普及度 ${newWord.stageProgress}%）`
-          );
-          setTimeout(() => setToastMessage(null), 5000);
-          setTimeout(() => {
-            setHighlightedTermIds((prev) => prev.filter((id) => id !== newWord.id));
-          }, 15000);
-          return;
-        }
-      }
-      throw new Error('API response invalid');
+      setIsAnalyzing(false);
+      const stageName = STAGES[term.stage]?.name || 'イノベーター理論';
+      const sourceBadge = source === 'gemini' ? '（Gemini AI分析）' : '（高速シミュレーション）';
+      setToastMessage(
+        `「${term.name}」を分析し、ベルカーブ上に正式追加しました！${sourceBadge}（${stageName} / 普及度 ${term.stageProgress}%）`
+      );
+      setTimeout(() => setToastMessage(null), 5000);
+      setTimeout(() => {
+        setHighlightedTermIds((prev) => prev.filter((id) => id !== term.id));
+      }, 15000);
     } catch (err) {
-      console.warn('Server analyze API request failed or timed out, using fallback generator', err);
+      console.warn('Client analyze failed, using fallback generator', err);
       // Fallback generator
       const fallbackTerm = generateAnalyzedTerm(cleanWord);
       const newWord = normalizeTermData(fallbackTerm, cleanWord);
@@ -372,6 +344,8 @@ export default function App() {
         onOpenWatchlist={() => setWatchlistOpen(true)}
         onScanTrending={handleScanTrending}
         isScanningTrending={isScanningTrending}
+        onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
+        hasApiKey={hasGeminiApiKey}
       />
 
       {/* Main Container */}
@@ -573,6 +547,15 @@ export default function App() {
         onRemoveFromWatchlist={(id) => handleToggleWatch(id)}
         onAddQuickTerm={(id) => handleToggleWatch(id)}
         availableTerms={words}
+      />
+
+      {/* Gemini API Key Modal for browser-direct integration */}
+      <ApiKeyModal
+        isOpen={apiKeyModalOpen}
+        onClose={() => setApiKeyModalOpen(false)}
+        onKeyUpdated={() => {
+          setHasGeminiApiKey(Boolean(getClientGeminiApiKey()));
+        }}
       />
     </div>
   );

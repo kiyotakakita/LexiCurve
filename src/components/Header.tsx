@@ -11,7 +11,8 @@ import {
   TrendingUp,
   X,
   Bookmark,
-  Flame
+  Flame,
+  Key
 } from 'lucide-react';
 import { CategoryId, TermData } from '../types';
 import { CATEGORIES } from '../data/stages';
@@ -27,6 +28,8 @@ interface HeaderProps {
   onOpenWatchlist: () => void;
   onScanTrending: () => void;
   isScanningTrending: boolean;
+  onOpenApiKeyModal?: () => void;
+  hasApiKey?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWatchlist,
   onScanTrending,
   isScanningTrending,
+  onOpenApiKeyModal,
+  hasApiKey,
 }) => {
   const [searchValue, setSearchValue] = useState('');
 
@@ -201,12 +206,28 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="theory-info-desktop-btn"
               onClick={onShowTheoryInfo}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 rounded-xl transition-colors whitespace-nowrap"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 rounded-xl transition-colors whitespace-nowrap cursor-pointer"
               title="イノベーター理論とキャズムについて"
             >
               <Info className="w-4 h-4 text-indigo-400" />
               <span>理論解説</span>
             </button>
+
+            {onOpenApiKeyModal && (
+              <button
+                id="gemini-api-key-btn"
+                onClick={onOpenApiKeyModal}
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium rounded-xl border transition-all whitespace-nowrap cursor-pointer ${
+                  hasApiKey
+                    ? 'text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30'
+                    : 'text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/80 border-slate-800'
+                }`}
+                title="Gemini API 設定 (VITE_GEMINI_API_KEY またはローカル入力)"
+              >
+                <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-slate-500'}`} />
+                <span>{hasApiKey ? 'Gemini AI接続中' : 'AIキー設定'}</span>
+              </button>
+            )}
           </div>
         </div>
 
