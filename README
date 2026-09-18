@@ -47,7 +47,7 @@
 
 ### 1. リポジトリのクローン
 ```bash
-git clone https://github.com/あなたのユーザー名/リポジトリ名.git
+git clone https://github.com/kiyotakakita/lexi-curve.git
 cd リポジトリ名
 
 npm install --force
