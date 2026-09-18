@@ -48,7 +48,7 @@
 ### 1. リポジトリのクローン
 ```bash
 git clone https://github.com/kiyotakakita/lexi-curve.git
-cd リポジトリ名
+cd lexi-curve
 
 npm install --force
 
