@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
@@ -15,7 +15,7 @@ import {
   Clock, 
   Users 
 } from 'lucide-react';
-import { TermData, JourneyStep } from '../types';
+import { TermData, JourneyStep, StageId } from '../types';
 import { STAGES } from '../data/stages';
 
 interface TermDetailModalProps {
@@ -35,9 +35,22 @@ export const TermDetailModal: React.FC<TermDetailModalProps> = ({
   isWatched = false,
   onToggleWatch,
 }) => {
+  // Close modal when pressing Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !term) return null;
 
-  const stage = STAGES[term.stage];
+  const stageId = (term.stage || (term as any).phase || 'innovator') as StageId;
+  const stage = STAGES[stageId] || STAGES.innovator;
 
   const getPhaseIcon = (phase: JourneyStep['phase']) => {
     switch (phase) {
@@ -67,29 +80,31 @@ export const TermDetailModal: React.FC<TermDetailModalProps> = ({
     }
   };
 
-  const handleDelete = () => {
+  // 1 & 2: Delete term and immediately close modal
+  const handleDelete = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     onDeleteTerm(term.id);
     onClose();
   };
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-black/75 backdrop-blur-sm"
-        />
-
-        {/* Modal Window */}
+      {/* Backdrop overlay: clicking anywhere outside closes the modal */}
+      <div 
+        id="term-detail-modal-overlay"
+        onClick={onClose}
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-black/80 backdrop-blur-sm cursor-pointer"
+      >
+        {/* Modal Window: stop propagation so clicking inside NEVER closes modal */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-3xl bg-[#0d1117] border border-slate-700/80 rounded-2xl shadow-2xl p-5 sm:p-7 text-slate-200 z-10 max-h-[90vh] overflow-y-auto no-scrollbar"
+          transition={{ duration: 0.18 }}
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-3xl bg-[#0d1117] border border-slate-700/80 rounded-2xl shadow-2xl p-5 sm:p-7 text-slate-200 z-10 max-h-[90vh] overflow-y-auto no-scrollbar cursor-default"
         >
           {/* Header Bar */}
           <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
@@ -138,7 +153,11 @@ export const TermDetailModal: React.FC<TermDetailModalProps> = ({
               {onToggleWatch && (
                 <button
                   id="modal-toggle-watch-btn"
-                  onClick={onToggleWatch}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleWatch();
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
                     isWatched
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
@@ -154,17 +173,24 @@ export const TermDetailModal: React.FC<TermDetailModalProps> = ({
               {/* Requirement 2: Delete button in detail popup modal */}
               <button
                 id="modal-delete-term-btn"
+                type="button"
                 onClick={handleDelete}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-600 transition-all cursor-pointer shadow-sm active:scale-95"
                 title="この単語をグラフから削除"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>この単語をグラフから削除</span>
+                <span>この単語を削除</span>
               </button>
 
+              {/* Requirement 1: Close X button */}
               <button
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1"
+                id="modal-close-x-btn"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
                 title="閉じる"
               >
                 <X className="w-5 h-5" />

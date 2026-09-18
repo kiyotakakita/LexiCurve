@@ -23,7 +23,8 @@ interface InsightPanelProps {
 export const InsightPanel: React.FC<InsightPanelProps> = ({ term }) => {
   const [copied, setCopied] = React.useState(false);
   const { insights } = term;
-  const stage = STAGES[term.stage];
+  const stageId = (term.stage || (term as any).phase || 'innovator');
+  const stage = STAGES[stageId] || STAGES.innovator;
 
   const handleCopySummary = () => {
     const text = `【${term.name}】（現在：${stage.name} / 通じる度：${insights.comprehensionScore}%）\n誕生：${term.firstAppearedYear}年（旅した日数：${insights.daysTraveled.toLocaleString()}日）\n推定到達層：${insights.targetAudience}\n詳細：${term.summary} #LexiCurve`;

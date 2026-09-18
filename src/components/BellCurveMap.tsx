@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   AlertTriangle, 
@@ -9,7 +9,8 @@ import {
   Users,
   Compass,
   Zap,
-  Flame
+  Flame,
+  X
 } from 'lucide-react';
 import { TermData, CategoryId, StageId } from '../types';
 import { STAGES, CHASM_X_PERCENT } from '../data/stages';
@@ -37,6 +38,77 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
 }) => {
   const [hoveredTerm, setHoveredTerm] = useState<TermData | null>(null);
   const [hoveredZone, setHoveredZone] = useState<StageId | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePinMouseEnter = useCallback((term: TermData) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    setHoveredTerm(term);
+  }, []);
+
+  const handlePinMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredTerm(null);
+    }, 120);
+  }, []);
+
+  const handlePinClick = useCallback((term: TermData) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    // Smoothly switch to clicked pin's popup, preventing multiple popups
+    setHoveredTerm(term);
+  }, []);
+
+  const handlePopupMouseEnter = useCallback(() => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+  }, []);
+
+  const handlePopupMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredTerm(null);
+    }, 80);
+  }, []);
+
+  // 1. Click Outside detection for the mini popup
+  useEffect(() => {
+    if (!hoveredTerm) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        setHoveredTerm(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [hoveredTerm]);
+
+  // 2. Escape key listener to close the mini popup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        setHoveredTerm(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Auto-close popup when category or terms change
+  useEffect(() => {
+    setHoveredTerm(null);
+  }, [selectedCategory, terms]);
+
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    };
+  }, []);
 
   // SVG dimensions
   const SVG_WIDTH = 1000;
@@ -100,23 +172,35 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
   // Convert stageProgress (0 to 100) to X coordinate
   const getXForProgress = (progress: number): number => {
     const span = BOUNDARIES.end - BOUNDARIES.start;
-    return BOUNDARIES.start + (progress / 100) * span;
+    const safeProg = typeof progress === 'number' && Number.isFinite(progress)
+      ? Math.max(0, Math.min(100, progress))
+      : 50;
+    return BOUNDARIES.start + (safeProg / 100) * span;
+  };
+
+  // Safe helper to extract progress from any term
+  const getTermProgress = (t: any): number => {
+    const val = t?.stageProgress ?? t?.score ?? t?.position ?? t?.progress;
+    const num = typeof val === 'number' ? val : parseFloat(String(val || ''));
+    return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 50;
   };
 
   // Calculate staggered vertical offsets so pins don't overlap
   const positionedTerms = useMemo(() => {
     // Sort terms by progress to calculate collision
-    const sorted = [...filteredTerms].sort((a, b) => a.stageProgress - b.stageProgress);
+    const sorted = [...filteredTerms].sort((a, b) => getTermProgress(a) - getTermProgress(b));
     
     return sorted.map((term, index) => {
-      const x = getXForProgress(term.stageProgress);
+      const prog = getTermProgress(term);
+      const x = getXForProgress(prog);
       const curveY = getY(x);
 
       // Check proximity with nearby terms
       let staggerLevel = 0;
       for (let i = 0; i < index; i++) {
         const prevTerm = sorted[i];
-        const prevX = getXForProgress(prevTerm.stageProgress);
+        const prevProg = getTermProgress(prevTerm);
+        const prevX = getXForProgress(prevProg);
         if (Math.abs(x - prevX) < 65) {
           staggerLevel = (staggerLevel + 1) % 3;
         }
@@ -128,6 +212,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
 
       return {
         ...term,
+        safeProgress: prog,
         x,
         curveY,
         pinY,
@@ -193,7 +278,25 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
         <svg
           viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
           className="w-full min-w-[760px] h-auto overflow-visible"
+          onMouseLeave={handlePinMouseLeave}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setHoveredTerm(null);
+            }
+          }}
         >
+          {/* Background click target to close popup when clicking empty space in SVG */}
+          <rect
+            id="svg-curve-bg-target"
+            x="0"
+            y="0"
+            width={SVG_WIDTH}
+            height={SVG_HEIGHT}
+            fill="transparent"
+            className="cursor-default"
+            onClick={() => setHoveredTerm(null)}
+          />
+
           <defs>
             {/* Zone Gradients */}
             <linearGradient id="grad-innovator" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -517,7 +620,9 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
           {positionedTerms.map((term) => {
             const isSelected = selectedTerm?.id === term.id;
             const isHovered = hoveredTerm?.id === term.id;
-            const stageConfig = STAGES[term.stage];
+            const stageId = (term.stage || (term as any).phase || 'innovator') as StageId;
+            const stageConfig = STAGES[stageId] || STAGES.innovator;
+            const termName = term.name || (term as any).title || '名称未設定';
 
             // Badge color styling
             let badgeBg = '#1e293b';
@@ -525,18 +630,18 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
             let badgeText = '#e2e8f0';
             let glowFilter = '';
 
-            if (term.stage === 'innovator') {
+            if (stageId === 'innovator') {
               badgeBorder = isSelected ? '#06b6d4' : '#0891b2';
               badgeBg = isSelected ? '#083344' : '#0f172a';
               glowFilter = isSelected ? 'url(#glow-cyan)' : '';
-            } else if (term.stage === 'early_adopter') {
+            } else if (stageId === 'early_adopter') {
               badgeBorder = isSelected ? '#a855f7' : '#7c3aed';
               badgeBg = isSelected ? '#2e1065' : '#0f172a';
               glowFilter = isSelected ? 'url(#glow-violet)' : '';
-            } else if (term.stage === 'early_majority') {
+            } else if (stageId === 'early_majority') {
               badgeBorder = isSelected ? '#10b981' : '#059669';
               badgeBg = isSelected ? '#064e3b' : '#0f172a';
-            } else if (term.stage === 'late_majority') {
+            } else if (stageId === 'late_majority') {
               badgeBorder = isSelected ? '#f59e0b' : '#d97706';
               badgeBg = isSelected ? '#451a03' : '#0f172a';
             } else {
@@ -547,7 +652,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
             // Estimate badge width
             const isTrending = term.isTrending || highlightedTermIds.includes(term.id);
             const showDelete = Boolean(onDeleteTerm && (isSelected || isHovered));
-            const approxTextWidth = term.name.length * 9.5 + (isTrending ? 42 : 32);
+            const approxTextWidth = termName.length * 9.5 + (isTrending ? 42 : 32);
             const badgeW = Math.max(90, Math.min(240, approxTextWidth + (showDelete ? 22 : 0)));
             const badgeH = 26;
 
@@ -567,12 +672,16 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                   type: 'spring',
                   damping: 18,
                   stiffness: 260,
-                  delay: Math.min(0.5, (term.stageProgress % 15) * 0.03),
+                  delay: Math.min(0.5, ((term.safeProgress || 0) % 15) * 0.03),
                 }}
                 className="cursor-pointer"
-                onClick={() => onSelectTerm(term)}
-                onMouseEnter={() => setHoveredTerm(term)}
-                onMouseLeave={() => setHoveredTerm(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectTerm(term);
+                  handlePinClick(term);
+                }}
+                onMouseEnter={() => handlePinMouseEnter(term)}
+                onMouseLeave={handlePinMouseLeave}
               >
                 {/* Connecting drop line from pin down to curve */}
                 <line
@@ -699,7 +808,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                     fontWeight={isSelected || isTrending ? '700' : '600'}
                     fontFamily="system-ui, -apple-system, sans-serif"
                   >
-                    {term.name.length > 14 ? term.name.substring(0, 13) + '…' : term.name}
+                    {termName.length > 14 ? termName.substring(0, 13) + '…' : termName}
                   </text>
 
                   {/* Requirement 2: Delete "×" button on badge on hover or select */}
@@ -741,6 +850,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
         <AnimatePresence>
           {hoveredTerm && (
             <motion.div
+              ref={popupRef}
               initial={{ opacity: 0, y: 5, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.96 }}
@@ -750,19 +860,37 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                 left: `${Math.max(10, Math.min(75, hoveredTerm.stageProgress))}%`,
                 top: '20px',
               }}
-              onMouseEnter={() => setHoveredTerm(hoveredTerm)}
-              onMouseLeave={() => setHoveredTerm(null)}
+              onMouseEnter={handlePopupMouseEnter}
+              onMouseLeave={handlePopupMouseLeave}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {hoveredTerm.categoryLabel}
-                </span>
-                <span className="text-[11px] font-medium text-slate-400">
-                  {STAGES[hoveredTerm.stage].name}
-                </span>
+                <div className="flex items-center gap-1.5 overflow-hidden">
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate">
+                    {hoveredTerm.categoryLabel}
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+                    {STAGES[hoveredTerm.stage]?.name || 'イノベーター理論'}
+                  </span>
+                </div>
+
+                {/* Requirement: Mini POPUP右上「×」ボタン */}
+                <button
+                  type="button"
+                  aria-label="ポップアップを閉じる"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHoveredTerm(null);
+                  }}
+                  className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-auto"
+                  title="閉じる (Esc)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
+
               <h4 className="text-sm font-bold text-white leading-snug">
-                {hoveredTerm.name}
+                {hoveredTerm.name || (hoveredTerm as any).title}
               </h4>
               <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
                 {hoveredTerm.summary}
@@ -775,6 +903,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setHoveredTerm(null);
                         onOpenDetailModal(hoveredTerm);
                       }}
                       className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
@@ -786,6 +915,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setHoveredTerm(null);
                         onDeleteTerm(hoveredTerm.id);
                       }}
                       className="text-rose-400 hover:text-rose-300 font-medium cursor-pointer flex items-center gap-0.5"

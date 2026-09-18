@@ -18,6 +18,7 @@ import { TermData, CategoryId } from './types';
 import { INITIAL_TERMS } from './data/mockTerms';
 import { STAGES } from './data/stages';
 import { generateAnalyzedTerm } from './utils/termGenerator';
+import { normalizeTermData } from './utils/normalizeTerm';
 import { Header } from './components/Header';
 import { BellCurveMap } from './components/BellCurveMap';
 import { JourneyFlow } from './components/JourneyFlow';
@@ -104,6 +105,19 @@ export default function App() {
   const [detailModalTerm, setDetailModalTerm] = useState<TermData | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Global Escape key listener to close all popups, drawers, and modals on screen
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDetailModalTerm(null);
+        setTheoryModalOpen(false);
+        setWatchlistOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
   // Scan trending buzzwords via AI
   const handleScanTrending = async () => {
     setIsScanningTrending(true);
@@ -134,26 +148,31 @@ export default function App() {
       }
 
       if (trendingTerms.length > 0) {
+        // Normalize each term ensuring all bell curve attributes are valid
+        const normalizedTrending = trendingTerms.map((t) => normalizeTermData(t, t.name));
+
         // Merge into words state, avoiding duplicates
         setWords((prev) => {
           const newMap = new Map<string, TermData>();
-          trendingTerms.forEach((t) => newMap.set(t.id, t));
+          normalizedTrending.forEach((t) => newMap.set(t.id, t));
           prev.forEach((t) => {
             if (!newMap.has(t.id)) newMap.set(t.id, t);
           });
           return Array.from(newMap.values());
         });
 
-        const newIds = trendingTerms.map((t) => t.id);
+        // Switch to 'all' so all newly scanned trending terms are immediately visible
+        setSelectedCategory('all');
+        const newIds = normalizedTrending.map((t) => t.id);
         setHighlightedTermIds(newIds);
 
         // Select the first trending term (e.g. Vibe Coding)
-        if (trendingTerms[0]) {
-          setSelectedTermId(trendingTerms[0].id);
+        if (normalizedTrending[0]) {
+          setSelectedTermId(normalizedTrending[0].id);
         }
 
         setToastMessage(
-          `🔥 最新の急上昇ワード ${trendingTerms.length} 件（Vibe Coding, AI Slop, ブレインロット等）をAIスキャンし、ベルカーブ上に一括プロットしました！`
+          `🔥 最新の急上昇ワード ${normalizedTrending.length} 件（Vibe Coding, AI Slop, ブレインロット等）をAIスキャンし、ベルカーブ上に一括プロットしました！`
         );
         setTimeout(() => setToastMessage(null), 6000);
 
@@ -207,20 +226,18 @@ export default function App() {
     });
   }, []);
 
-  // 1. Requirement: Formally add searched word to words state and persist in localStorage
+  // 1. Requirement: Formally add searched word to words state, position on bell curve, and persist in localStorage
   const handleAnalyzeWord = async (word: string) => {
     const cleanWord = word.trim();
     if (!cleanWord) return;
 
-    // Check if word already exists in words list
+    // Check if word already exists in words list (check name and title)
     const existing = words.find(
-      (w) => w.name.toLowerCase() === cleanWord.toLowerCase()
+      (w) => w.name.toLowerCase() === cleanWord.toLowerCase() || (w as any).title?.toLowerCase() === cleanWord.toLowerCase()
     );
     if (existing) {
+      setSelectedCategory('all');
       setSelectedTermId(existing.id);
-      if (selectedCategory !== 'all' && selectedCategory !== existing.category) {
-        setSelectedCategory('all');
-      }
       setHighlightedTermIds([existing.id]);
       setToastMessage(`「${existing.name}」は既に登録されています。ベルカーブ上の位置を選択・表示しました！`);
       setTimeout(() => setToastMessage(null), 4000);
@@ -245,25 +262,21 @@ export default function App() {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.term) {
-          const analyzed = result.term as TermData;
-          const newWord: TermData = {
-            ...analyzed,
-            isCustom: true,
-          };
+          // Normalize with guaranteed ID, progress, score, position, stage, and phase
+          const newWord = normalizeTermData(result.term, cleanWord);
           
           // Formally add to words state: setWords(prev => [newWord, ...prev])
           setWords((prev) => [newWord, ...prev.filter((w) => w.id !== newWord.id)]);
+          
+          // Auto-switch to 'all' so the new term is immediately visible on the bell curve
+          setSelectedCategory('all');
           setSelectedTermId(newWord.id);
           setHighlightedTermIds([newWord.id]);
 
-          // Ensure it is immediately visible on the bell curve
-          if (selectedCategory !== 'all' && selectedCategory !== newWord.category) {
-            setSelectedCategory('all');
-          }
-
           setIsAnalyzing(false);
+          const stageName = STAGES[newWord.stage]?.name || 'イノベーター理論';
           setToastMessage(
-            `「${newWord.name}」を分析し、ベルカーブ上に正式追加しました！（${STAGES[newWord.stage].name} / 普及度 ${newWord.stageProgress}%）`
+            `「${newWord.name}」を分析し、ベルカーブ上に正式追加しました！（${stageName} / 普及度 ${newWord.stageProgress}%）`
           );
           setTimeout(() => setToastMessage(null), 5000);
           setTimeout(() => {
@@ -277,20 +290,16 @@ export default function App() {
       console.warn('Server analyze API request failed or timed out, using fallback generator', err);
       // Fallback generator
       const fallbackTerm = generateAnalyzedTerm(cleanWord);
-      const newWord: TermData = {
-        ...fallbackTerm,
-        isCustom: true,
-      };
+      const newWord = normalizeTermData(fallbackTerm, cleanWord);
+
       setWords((prev) => [newWord, ...prev.filter((w) => w.id !== newWord.id)]);
+      setSelectedCategory('all');
       setSelectedTermId(newWord.id);
       setHighlightedTermIds([newWord.id]);
 
-      if (selectedCategory !== 'all' && selectedCategory !== newWord.category) {
-        setSelectedCategory('all');
-      }
-
       setIsAnalyzing(false);
-      setToastMessage(`「${newWord.name}」を分析し、ベルカーブ上に正式追加しました！（普及度 ${newWord.stageProgress}%）`);
+      const stageName = STAGES[newWord.stage]?.name || 'イノベーター理論';
+      setToastMessage(`「${newWord.name}」を分析し、ベルカーブ上に正式追加しました！（${stageName} / 普及度 ${newWord.stageProgress}%）`);
       setTimeout(() => setToastMessage(null), 5000);
       setTimeout(() => {
         setHighlightedTermIds((prev) => prev.filter((id) => id !== newWord.id));
@@ -298,28 +307,30 @@ export default function App() {
     }
   };
 
-  // 2. Requirement: Delete term from words state and localStorage
+  // 2. Requirement: Delete term from words state, close modal immediately, and persist
   const handleDeleteTerm = useCallback((termId: string) => {
     const termToDelete = words.find((w) => w.id === termId);
-    if (!termToDelete) return;
-
+    
+    // 1. Remove target term from words state
     setWords((prev) => prev.filter((w) => w.id !== termId));
     setWatchlistIds((prev) => prev.filter((id) => id !== termId));
 
-    if (selectedTermId === termId) {
-      const remaining = words.filter((w) => w.id !== termId);
-      if (remaining.length > 0) {
-        setSelectedTermId(remaining[0].id);
+    // 2. Immediately close detail modal
+    setDetailModalTerm(null);
+
+    // If currently selected term is deleted, auto-select first remaining term
+    setSelectedTermId((prevSelected) => {
+      if (prevSelected === termId) {
+        const remaining = words.filter((w) => w.id !== termId);
+        return remaining.length > 0 ? remaining[0].id : '';
       }
-    }
+      return prevSelected;
+    });
 
-    if (detailModalTerm?.id === termId) {
-      setDetailModalTerm(null);
-    }
-
-    setToastMessage(`「${termToDelete.name}」をベルカーブから削除しました`);
+    const termName = termToDelete?.name || '単語';
+    setToastMessage(`「${termName}」をベルカーブから削除しました`);
     setTimeout(() => setToastMessage(null), 3500);
-  }, [words, selectedTermId, detailModalTerm]);
+  }, [words]);
 
   // Reset to default terms
   const handleResetDefaultTerms = () => {
