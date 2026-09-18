@@ -1,15 +1,61 @@
-// WARNING: Client-side Gemini API integration requested by user.
-// Notice: Calling Gemini API directly from the client exposes the API key in browser network traffic.
-// Ensure your API key is restricted or use server-side routing in production.
-
+// Direct Client-side Gemini API Service with model selection and era categorization
 import { GoogleGenAI } from '@google/genai';
 import { TermData } from '../types';
-import { generateAnalyzedTerm } from '../utils/termGenerator';
-import { CURATED_TRENDING_TERMS } from '../data/trendingTerms';
 import { normalizeTermData } from '../utils/normalizeTerm';
 
+export interface GeminiModelOption {
+  id: string;
+  name: string;
+  era: string; // 時期・世代
+  badge: string;
+  description: string;
+  recommended?: boolean;
+}
+
+export const AVAILABLE_GEMINI_MODELS: GeminiModelOption[] = [
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    era: '2025年〜最新世代',
+    badge: '推奨・超高速',
+    description: '思考・推論能力と高速応答を両立した最新主力モデル',
+    recommended: true,
+  },
+  {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    era: '2025年〜最新世代',
+    badge: '最高精度推論',
+    description: '難解な専門用語や語源の深い変遷分析に最適な高精度モデル',
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    era: '2024年末〜2025年',
+    badge: '次世代高速',
+    description: '低レイテンシーとリアルタイム分析に特化したモデル',
+  },
+  {
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    era: '2024年中期〜',
+    badge: '安定・軽量',
+    description: 'コスト効率と長文脈処理に優れた実績のある安定モデル',
+  },
+  {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
+    era: '2024年前半〜',
+    badge: '大容量コンテキスト',
+    description: '詳細なエビデンス検証と長文読解に強いモデル',
+  },
+];
+
+const LOCAL_STORAGE_KEY = 'lexicurve_gemini_api_key';
+const LOCAL_STORAGE_MODEL_KEY = 'lexicurve_gemini_selected_model';
+
 /**
- * Retrieves the Gemini API key from import.meta.env or localStorage fallback
+ * Retrieves the Gemini API key from import.meta.env or localStorage
  */
 export function getClientGeminiApiKey(): string {
   // 1. Vite environment variable
@@ -18,10 +64,10 @@ export function getClientGeminiApiKey(): string {
 
   // 2. Local storage if the user saved an API key in the browser
   try {
-    const localKey = localStorage.getItem('lexicurve_gemini_api_key')?.trim();
+    const localKey = localStorage.getItem(LOCAL_STORAGE_KEY)?.trim();
     if (localKey) return localKey;
   } catch {
-    // Ignore localStorage access errors (e.g. strict iframe)
+    // Ignore localStorage access errors
   }
 
   return '';
@@ -33,9 +79,38 @@ export function getClientGeminiApiKey(): string {
 export function setClientGeminiApiKey(key: string) {
   try {
     if (key.trim()) {
-      localStorage.setItem('lexicurve_gemini_api_key', key.trim());
+      localStorage.setItem(LOCAL_STORAGE_KEY, key.trim());
     } else {
-      localStorage.removeItem('lexicurve_gemini_api_key');
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Gets the selected Gemini model ID
+ */
+export function getClientGeminiModel(): string {
+  try {
+    const localModel = localStorage.getItem(LOCAL_STORAGE_MODEL_KEY)?.trim();
+    if (localModel) return localModel;
+  } catch {
+    // Ignore
+  }
+  const envModel = (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim();
+  if (envModel) return envModel;
+
+  return 'gemini-2.5-flash';
+}
+
+/**
+ * Sets the selected Gemini model ID
+ */
+export function setClientGeminiModel(modelId: string) {
+  try {
+    if (modelId.trim()) {
+      localStorage.setItem(LOCAL_STORAGE_MODEL_KEY, modelId.trim());
     }
   } catch {
     // Ignore
@@ -103,7 +178,7 @@ const ANALYSIS_PROMPT_TEMPLATE = (word: string) => `あなたは新造語・バ�
     "targetAudience": "現在理解している主なターゲット層（例: 先端AIエンジニア）",
     "chasmStatus": "before" | "crossing" | "crossed" | "settled",
     "recommendedContext": "おすすめの使用シーン（例: 社内Slack、勉強会）",
-    "riskLevel": "理解されない" | "意識高いと見られる" | "一般常識" | "今更感"
+    "riskLevel": "理解されない" | "意識高いと見られる" | "一般常シック" | "今更感"
   },
   "audienceSafety": {
     "executiveClient": {
@@ -131,31 +206,27 @@ const ANALYSIS_PROMPT_TEMPLATE = (word: string) => `あなたは新造語・バ�
 }`;
 
 /**
- * Direct browser call to Gemini API using @google/genai or REST fetch
- * Falls back immediately to the local intelligent generator if no key is present or on network failure.
+ * Direct browser call to Gemini API using user-selected model
+ * Throws explicit error if key is missing or call fails so user is properly informed.
  */
-export async function analyzeWordDirect(word: string): Promise<{ term: TermData; source: 'gemini' | 'dynamic_fallback' }> {
+export async function analyzeWordDirect(word: string): Promise<{ term: TermData; model: string }> {
   const query = word.trim();
   const apiKey = getClientGeminiApiKey();
 
-  // 3. Requirement: Fallback if no API key is provided
   if (!apiKey) {
-    console.info(`[Client-Gemini] VITE_GEMINI_API_KEY is not set. Generating realistic simulated Innovator Theory data for "${query}".`);
-    const fallback = generateAnalyzedTerm(query);
-    return {
-      term: normalizeTermData(fallback, query),
-      source: 'dynamic_fallback'
-    };
+    throw new Error('Gemini APIキーが設定されていません。ヘッダーの「AI設定」ボタンからAPIキーを入力してください。');
   }
 
+  const model = getClientGeminiModel();
   const prompt = ANALYSIS_PROMPT_TEMPLATE(query);
 
-  // 1. Try @google/genai SDK first
+  let rawJsonText = '';
+
+  // 1. Try @google/genai SDK
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Try gemini-2.5-flash first as modern standard, fallback to gemini-1.5-flash if requested
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -163,21 +234,13 @@ export async function analyzeWordDirect(word: string): Promise<{ term: TermData;
       },
     });
 
-    const text = response.text || '';
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    const normalized = normalizeTermData(parsed, query);
-    return {
-      term: normalized,
-      source: 'gemini'
-    };
-  } catch (sdkError) {
-    console.warn('[Client-Gemini] @google/genai SDK call failed, attempting direct REST fetch fallback (gemini-1.5-flash)...', sdkError);
+    rawJsonText = response.text || '';
+  } catch (sdkError: any) {
+    console.warn(`[Client-Gemini] SDK with ${model} failed, attempting REST fetch fallback...`, sdkError);
     
-    // Try direct REST fetch with gemini-1.5-flash as specified by user
+    // 2. Fallback to direct REST endpoint with same model
     try {
-      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const restResponse = await fetch(restUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -190,47 +253,45 @@ export async function analyzeWordDirect(word: string): Promise<{ term: TermData;
         })
       });
 
-      if (restResponse.ok) {
-        const data = await restResponse.json();
-        const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidateText) {
-          const cleaned = candidateText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-          const parsed = JSON.parse(cleaned);
-          const normalized = normalizeTermData(parsed, query);
-          return {
-            term: normalized,
-            source: 'gemini'
-          };
-        }
+      if (!restResponse.ok) {
+        const errorData = await restResponse.json().catch(() => ({}));
+        const errMsg = errorData?.error?.message || `HTTP ${restResponse.status} ${restResponse.statusText}`;
+        throw new Error(`Gemini APIエラー [${model}]: ${errMsg}`);
       }
-    } catch (fetchError) {
-      console.warn('[Client-Gemini] Direct fetch call also failed:', fetchError);
+
+      const data = await restResponse.json();
+      rawJsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (restError: any) {
+      // Re-throw with clear message
+      throw new Error(restError.message || sdkError.message || `モデル「${model}」での分析に失敗しました。`);
     }
   }
 
-  // If both failed or API key was invalid, smoothly fall back to realistic data generator
-  console.info(`[Client-Gemini] API execution failed or key rate-limited. Falling back to dynamic term generator for "${query}".`);
-  const fallback = generateAnalyzedTerm(query);
+  if (!rawJsonText) {
+    throw new Error(`モデル「${model}」から有効な回答が得られませんでした。`);
+  }
+
+  const cleaned = rawJsonText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
+  const normalized = normalizeTermData(parsed, query);
+
   return {
-    term: normalizeTermData(fallback, query),
-    source: 'dynamic_fallback'
+    term: normalized,
+    model,
   };
 }
 
 /**
- * Direct browser scan for trending buzzwords using Gemini or curated fallback
+ * Direct browser scan for trending buzzwords using the user-selected Gemini model
  */
-export async function scanTrendingDirect(): Promise<{ terms: TermData[]; source: 'gemini' | 'curated_trending' }> {
+export async function scanTrendingDirect(): Promise<{ terms: TermData[]; model: string }> {
   const apiKey = getClientGeminiApiKey();
 
   if (!apiKey) {
-    console.info('[Client-Gemini] No API key provided for trend scan. Using curated real-time dataset.');
-    return {
-      terms: CURATED_TRENDING_TERMS.map(t => normalizeTermData(t, t.name)),
-      source: 'curated_trending'
-    };
+    throw new Error('Gemini APIキーが設定されていません。ヘッダーの「AI設定」ボタンからAPIキーを入力してください。');
   }
 
+  const model = getClientGeminiModel();
   const prompt = `あなたは最新のインターネットカルチャー、シリコンバレーの先端テック、生成AI、新世代の生産性・働き方に最も精通した社会言語学・イノベータートレンド分析AIです。
 現在（2025〜2026年）、X (Twitter)、Hacker News、Reddit、TikTok、Zenn、noteなどのコミュニティやビジネス現場で話題沸騰・急浮上している「最新の新造語・バズワード」を厳選して6〜8個ピックアップし、それぞれイノベーター理論の普及度、源流ツリー、実務通じる度、語義変遷を完全に分析したJSON配列（TermData[]）を出力してください。
 
@@ -239,12 +300,14 @@ export async function scanTrendingDirect(): Promise<{ terms: TermData[]; source:
 2. イノベーター理論の5段階（innovator, early_adopter, early_majority, late_majority, laggard）に適切に分散してプロットできるようにstageとstageProgress (0〜100) を設定すること。
 3. キャズム直前（nearChasm: true）のものを含めること。
 
-出力はJSON配列のみとしてください。`;
+出力は有効なJSON配列のみとしてください。`;
+
+  let rawJsonText = '';
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -252,27 +315,55 @@ export async function scanTrendingDirect(): Promise<{ terms: TermData[]; source:
       },
     });
 
-    const text = response.text || '';
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
+    rawJsonText = response.text || '';
+  } catch (sdkError: any) {
+    console.warn(`[Client-Gemini] SDK scan with ${model} failed, attempting REST fetch...`, sdkError);
+    try {
+      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const restResponse = await fetch(restUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.3
+          }
+        })
+      });
 
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const normalized = parsed.map((t: any) => ({
-        ...normalizeTermData(t, t?.name || 'トレンドワード'),
-        isTrending: true,
-        isCustom: true
-      }));
-      return {
-        terms: normalized,
-        source: 'gemini'
-      };
+      if (!restResponse.ok) {
+        const errorData = await restResponse.json().catch(() => ({}));
+        const errMsg = errorData?.error?.message || `HTTP ${restResponse.status}`;
+        throw new Error(`トレンドスキャン失敗 [${model}]: ${errMsg}`);
+      }
+
+      const data = await restResponse.json();
+      rawJsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (restError: any) {
+      throw new Error(restError.message || sdkError.message || `トレンドスキャンに失敗しました。`);
     }
-  } catch (err) {
-    console.warn('[Client-Gemini] Trend scan API failed, using curated dataset.', err);
   }
 
+  if (!rawJsonText) {
+    throw new Error(`モデル「${model}」からトレンドデータを取得できませんでした。`);
+  }
+
+  const cleaned = rawJsonText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('モデルから取得したトレンドデータが配列形式ではありませんでした。');
+  }
+
+  const normalized = parsed.map((t: any) => ({
+    ...normalizeTermData(t, t?.name || 'トレンドワード'),
+    isTrending: true,
+    isCustom: true,
+  }));
+
   return {
-    terms: CURATED_TRENDING_TERMS.map(t => normalizeTermData(t, t.name)),
-    source: 'curated_trending'
+    terms: normalized,
+    model,
   };
 }

@@ -30,6 +30,7 @@ interface HeaderProps {
   isScanningTrending: boolean;
   onOpenApiKeyModal?: () => void;
   hasApiKey?: boolean;
+  currentModel?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -45,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   isScanningTrending,
   onOpenApiKeyModal,
   hasApiKey,
+  currentModel = 'gemini-2.5-flash',
 }) => {
   const [searchValue, setSearchValue] = useState('');
 
@@ -217,15 +219,16 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="gemini-api-key-btn"
                 onClick={onOpenApiKeyModal}
-                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium rounded-xl border transition-all whitespace-nowrap cursor-pointer ${
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border transition-all whitespace-nowrap cursor-pointer ${
                   hasApiKey
-                    ? 'text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30'
-                    : 'text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/80 border-slate-800'
+                    ? 'text-indigo-300 hover:text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20 border-indigo-500/30'
+                    : 'text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30'
                 }`}
-                title="Gemini API 設定 (VITE_GEMINI_API_KEY またはローカル入力)"
+                title="Gemini モデル選択 & APIキー設定"
               >
-                <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-slate-500'}`} />
-                <span>{hasApiKey ? 'Gemini AI接続中' : 'AIキー設定'}</span>
+                <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-indigo-400' : 'text-amber-400'}`} />
+                <span className="font-mono text-[11px] font-semibold">{currentModel}</span>
+                <span className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
               </button>
             )}
           </div>
