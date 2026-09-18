@@ -4,8 +4,6 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import { generateAnalyzedTerm } from './src/utils/termGenerator.js';
-import { CURATED_TRENDING_TERMS } from './src/data/trendingTerms.js';
 
 dotenv.config();
 
@@ -37,7 +35,7 @@ async function startServer() {
 
   // Word analysis endpoint
   app.post('/api/analyze-word', async (req, res) => {
-    const { word } = req.body || {};
+    const { word, model = 'gemini-2.5-flash' } = req.body || {};
     if (!word || typeof word !== 'string' || !word.trim()) {
       return res.status(400).json({ error: 'Word parameter is required' });
     }
@@ -46,12 +44,8 @@ async function startServer() {
     const gemini = getGemini();
 
     if (!gemini) {
-      console.log(`[analyze-word] GEMINI_API_KEY not configured. Using intelligent dynamic generator for "${query}".`);
-      const fallbackTerm = generateAnalyzedTerm(query);
-      return res.json({
-        success: true,
-        source: 'dynamic_fallback',
-        term: fallbackTerm,
+      return res.status(400).json({ 
+        error: 'APIキーが設定されていません。右上の設定から入力してください' 
       });
     }
 
@@ -132,7 +126,7 @@ async function startServer() {
       "advice": "社内テックチームや実務陣との会話での使い所"
     },
     "paraphraseSuggestion": {
-      "plainTerm": "専門用語を避けた平易な言い換え表現（例: 『社内マニュアルをAIに参照させる仕組み』）",
+      "plainTerm": "専門用語を避けた平易な言い換え表現",
       "exampleSentence": "役員報告やクライアント会議でそのまま使える言い換え例文"
     }
   },
@@ -145,7 +139,7 @@ async function startServer() {
 }`;
 
       const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: model,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -154,22 +148,9 @@ async function startServer() {
       });
 
       const responseText = response.text || '';
-      let parsedData;
-      try {
-        // Strip markdown backticks if any
-        const cleaned = responseText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-        parsedData = JSON.parse(cleaned);
-      } catch (parseErr) {
-        console.warn('[analyze-word] Failed to parse Gemini response as JSON. Falling back to dynamic generator.', parseErr);
-        const fallbackTerm = generateAnalyzedTerm(query);
-        return res.json({
-          success: true,
-          source: 'dynamic_fallback',
-          term: fallbackTerm,
-        });
-      }
+      const cleaned = responseText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsedData = JSON.parse(cleaned);
 
-      // Add unique id and isCustom flag
       parsedData.id = `term-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       parsedData.isCustom = true;
 
@@ -178,130 +159,43 @@ async function startServer() {
         source: 'gemini',
         term: parsedData,
       });
-    } catch (apiError) {
-      console.error('[analyze-word] Gemini API call error:', apiError);
-      // Graceful fallback so app always works
-      const fallbackTerm = generateAnalyzedTerm(query);
-      return res.json({
-        success: true,
-        source: 'dynamic_fallback',
-        term: fallbackTerm,
+    } catch (apiError: any) {
+      console.error('[analyze-word] Google API Error:', apiError);
+      const status = apiError?.status || apiError?.statusCode || 500;
+      const message = apiError?.message || 'Google API通信エラーが発生しました';
+      return res.status(status).json({
+        error: `Google API エラー [HTTP ${status}]: ${message}`,
       });
     }
   });
 
   // Trending buzzwords automatic scan endpoint
-  app.post('/api/scan-trending-words', async (_req, res) => {
+  app.post('/api/scan-trending-words', async (req, res) => {
+    const { model = 'gemini-2.5-flash' } = req.body || {};
     const gemini = getGemini();
 
     if (!gemini) {
-      console.log('[scan-trending] No GEMINI_API_KEY. Using curated real-time trending buzzwords dataset.');
-      return res.json({
-        success: true,
-        source: 'curated_trending',
-        terms: CURATED_TRENDING_TERMS,
+      return res.status(400).json({ 
+        error: 'APIキーが設定されていません。右上の設定から入力してください' 
       });
     }
 
     try {
-      const prompt = `あなたは最新のインターネットカルチャー、シリコンバレーの先端テック、生成AI、新世代の生産性・働き方に最も精通した社会言語学・イノベータートレンド分析AIです。
-現在（2025〜2026年）、X (Twitter)、Hacker News、Reddit、TikTok、Zenn、noteなどのコミュニティやビジネス現場で話題沸騰・急浮上している「最新の新造語・バズワード」を厳選して6〜8個ピックアップし、それぞれイノベーター理論の普及度、源流ツリー、実務通じる度、語義変遷を完全に分析したJSON配列（TermData[]）を出力してください。
+      const prompt = `あなたはインターネットカルチャー、シリコンバレーの先端テック、生成AI、新世代の生産性・働き方に最も精通した社会言語学・イノベータートレンド分析AIです。
+現在話題沸騰・急浮上している「最新の新造語・バズワード」について、AI、生産性、ビジネス、カルチャーの各分野からバランスよく合計5〜6個の新造語を抽出してください。
 
-【必須要件】
-1. テクノロジー、ライフハック、働き方、カルチャーを網羅すること（例: "Vibe Coding", "AI Slop", "ブレインロット (Brain Rot)", "シャドウAI", "エージェンティック・ワークフロー", "タイムブロッキング 2.0" などの旬なキーワードを含むこと）。
-2. イノベーター理論の5段階（innovator, early_adopter, early_majority, late_majority, laggard）に適切に分散してプロットできるようにstageとstageProgress (0〜100) を設定すること。
-3. キャズム直前（nearChasm: true）のものを含めること。
-
-【出力フォーマット（JSON配列のみを出力してください）】:
+必ず以下のキーを持つJSON配列（Array）形式のみを出力してください：
 [
   {
-    "id": "trend-1",
     "name": "単語名（例: Vibe Coding）",
-    "reading": "カタカナ読み",
-    "category": "ai" | "productivity" | "business" | "culture",
-    "categoryLabel": "カテゴリ表示名",
-    "stage": "innovator" | "early_adopter" | "early_majority" | "late_majority" | "laggard",
-    "stageProgress": 0から100の数値,
-    "nearChasm": true | false,
-    "summary": "1行の簡潔な要約",
-    "definition": "詳細な定義（誰がいつ提唱したか等）",
-    "firstAppearedYear": 初出年（西暦）,
-    "tags": ["タグ1", "タグ2", "タグ3"],
-    "isCustom": true,
-    "journey": [
-      {
-        "phase": "origin",
-        "phaseTitle": "【水源（誕生）】",
-        "year": "年月",
-        "platform": "プラットフォーム名",
-        "title": "タイトル",
-        "description": "説明",
-        "keyArtifact": "初出アーティファクト"
-      },
-      {
-        "phase": "spread",
-        "phaseTitle": "【合流（拡散）】",
-        "year": "年月",
-        "platform": "拡散プラットフォーム",
-        "title": "タイトル",
-        "description": "説明",
-        "keyArtifact": "拡散アーティファクト"
-      },
-      {
-        "phase": "border_crossing",
-        "phaseTitle": "【国境越え（翻訳）】",
-        "year": "年月",
-        "platform": "日本国内メディア",
-        "title": "タイトル",
-        "description": "説明",
-        "keyArtifact": "日本でのアーティファクト"
-      },
-      {
-        "phase": "mainstream",
-        "phaseTitle": "【大河（現在地）】",
-        "year": "年月",
-        "platform": "実務現場・メディア",
-        "title": "タイトル",
-        "description": "説明",
-        "keyArtifact": "現在地アーティファクト"
-      }
-    ],
-    "insights": {
-      "comprehensionScore": 0から100の整数,
-      "daysTraveled": 誕生からの推定日数,
-      "targetAudience": "主な理解層",
-      "chasmStatus": "before" | "crossing" | "crossed" | "settled",
-      "recommendedContext": "おすすめの会話・使用シーン",
-      "riskLevel": "理解されない" | "意識高いと見られる" | "一般常識" | "今更感"
-    },
-    "audienceSafety": {
-      "executiveClient": {
-        "status": "safe" | "caution" | "danger",
-        "statusLabel": "🟢 安全" | "🟡 要言い換え" | "🔴 通じない",
-        "confusionProbability": 0から100の整数,
-        "advice": "役員やクライアントに対するアドバイス"
-      },
-      "techInternal": {
-        "status": "safe" | "caution" | "danger",
-        "statusLabel": "🟢 通じる（推奨）" | "🟡 要言い換え" | "🔴 注意",
-        "advice": "社内テックチームでの使い所"
-      },
-      "paraphraseSuggestion": {
-        "plainTerm": "平易な言い換え表現",
-        "exampleSentence": "そのまま使える言い換え例文"
-      }
-    },
-    "semanticShift": {
-      "originalMeaning": "海外で生まれた当初の厳密な原義",
-      "originalContext": "提唱された当時の文脈",
-      "currentNuance": "日本や現在の受容ニュアンス",
-      "shiftHighlight": "意味の変化・ギャップのポイント"
-    }
+    "description": "簡潔な説明文",
+    "category": "以下の4つの中から最も適切なものを1つ選択: [生産性・ライフハック, AI・テクノロジー, ビジネス・働き方, カルチャー・若者言葉]",
+    "score": ベルカーブ上の位置（イノベーターなら5〜15、アダプターなら20〜35等の数値0〜100）
   }
 ]`;
 
       const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: model,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -310,40 +204,44 @@ async function startServer() {
       });
 
       const responseText = response.text || '';
-      let parsedList: any[];
-      try {
-        const cleaned = responseText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-        parsedList = JSON.parse(cleaned);
-        if (!Array.isArray(parsedList) || parsedList.length === 0) {
-          throw new Error('Not an array');
-        }
-      } catch (parseErr) {
-        console.warn('[scan-trending] Gemini output not valid JSON array. Using curated trending list.', parseErr);
-        return res.json({
-          success: true,
-          source: 'curated_trending',
-          terms: CURATED_TRENDING_TERMS,
-        });
+      const cleaned = responseText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsedList = JSON.parse(cleaned);
+
+      if (!Array.isArray(parsedList) || parsedList.length === 0) {
+        throw new Error('Google APIから有効な配列レスポンスを受信できませんでした');
       }
 
-      // Ensure valid IDs
-      const validatedList = parsedList.map((item, idx) => ({
-        ...item,
-        id: item.id || `trend-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-        isCustom: true,
-      }));
+      const validatedList = parsedList.map((item, idx) => {
+        const wordName = item?.name || item?.word || item?.title || item?.term || '新着ワード';
+        const description = item?.description || item?.explanation || item?.summary || item?.definition || '';
+        const category = item?.category || item?.genre || 'AI・テクノロジー';
+        const score = typeof item?.score === 'number' ? item.score : 20;
+
+        return {
+          id: item.id || `trend-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          name: wordName,
+          title: wordName,
+          description,
+          summary: description,
+          definition: description,
+          category,
+          score,
+          isCustom: true,
+          isTrending: true,
+        };
+      });
 
       return res.json({
         success: true,
         source: 'gemini_trending',
         terms: validatedList,
       });
-    } catch (apiErr) {
-      console.error('[scan-trending] Gemini call failed, returning curated list:', apiErr);
-      return res.json({
-        success: true,
-        source: 'curated_trending',
-        terms: CURATED_TRENDING_TERMS,
+    } catch (apiErr: any) {
+      console.error('[scan-trending] Google API Error:', apiErr);
+      const status = apiErr?.status || apiErr?.statusCode || 500;
+      const message = apiErr?.message || 'Google API通信エラーが発生しました';
+      return res.status(status).json({
+        error: `Google API エラー [HTTP ${status}]: ${message}`,
       });
     }
   });

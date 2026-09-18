@@ -17,7 +17,6 @@ import {
 import { TermData, CategoryId } from './types';
 import { INITIAL_TERMS } from './data/mockTerms';
 import { STAGES } from './data/stages';
-import { generateAnalyzedTerm } from './utils/termGenerator';
 import { normalizeTermData } from './utils/normalizeTerm';
 import { Header } from './components/Header';
 import { BellCurveMap } from './components/BellCurveMap';
@@ -113,7 +112,7 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
   const [hasGeminiApiKey, setHasGeminiApiKey] = useState<boolean>(() => Boolean(getClientGeminiApiKey()));
   const [geminiModel, setGeminiModel] = useState<string>(() => getClientGeminiModel());
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   // Global Escape key listener to close all popups, drawers, and modals on screen
   useEffect(() => {
@@ -131,6 +130,16 @@ export default function App() {
 
   // Scan trending buzzwords directly from browser using selected Gemini model
   const handleScanTrending = async () => {
+    // 1. Requirement: If API key is missing, warn in red text and abort
+    if (!getClientGeminiApiKey()) {
+      setToast({
+        type: 'error',
+        message: 'APIキーが設定されていません。右上の設定から入力してください',
+      });
+      setApiKeyModalOpen(true);
+      return;
+    }
+
     setIsScanningTrending(true);
 
     try {
@@ -156,10 +165,10 @@ export default function App() {
           setSelectedTermId(trendingTerms[0].id);
         }
 
-        setToastMessage(
-          `🔥 急上昇ワード ${trendingTerms.length} 件をモデル「${model}」でスキャンし、ベルカーブ上にプロットしました！`
-        );
-        setTimeout(() => setToastMessage(null), 6000);
+        setToast({
+          type: 'success',
+          message: `🔥 急上昇ワード ${trendingTerms.length} 件をモデル「${model}」でスキャンし、ベルカーブ上にプロットしました！`,
+        });
 
         // Keep highlighted animation for 18 seconds
         setTimeout(() => {
@@ -167,13 +176,15 @@ export default function App() {
         }, 18000);
       }
     } catch (err: any) {
-      console.error('Error scanning trending words:', err);
+      console.error('Google API Error during trending scan:', err);
       const errMsg = err?.message || '最新トレンドのスキャン中にエラーが発生しました';
-      setToastMessage(`⚠️ ${errMsg}`);
-      if (!getClientGeminiApiKey()) {
+      setToast({
+        type: 'error',
+        message: errMsg,
+      });
+      if (!getClientGeminiApiKey() || errMsg.includes('APIキー') || errMsg.includes('400') || errMsg.includes('403')) {
         setApiKeyModalOpen(true);
       }
-      setTimeout(() => setToastMessage(null), 6000);
     } finally {
       setIsScanningTrending(false);
     }
@@ -203,13 +214,11 @@ export default function App() {
     setWatchlistIds((prev) => {
       if (prev.includes(termId)) {
         const updated = prev.filter((id) => id !== termId);
-        setToastMessage('ウォッチリストから解除しました');
-        setTimeout(() => setToastMessage(null), 3000);
+        setToast({ type: 'info', message: 'ウォッチリストから解除しました' });
         return updated;
       } else {
         const updated = [...prev, termId];
-        setToastMessage('★ ウォッチリストに追加しました（先物買い）');
-        setTimeout(() => setToastMessage(null), 3000);
+        setToast({ type: 'info', message: '★ ウォッチリストに追加しました（先物買い）' });
         return updated;
       }
     });
@@ -220,6 +229,16 @@ export default function App() {
     const cleanWord = word.trim();
     if (!cleanWord) return;
 
+    // Check API Key first: Warn in red text and abort if missing
+    if (!getClientGeminiApiKey()) {
+      setToast({
+        type: 'error',
+        message: 'APIキーが設定されていません。右上の設定から入力してください',
+      });
+      setApiKeyModalOpen(true);
+      return;
+    }
+
     // Check if word already exists in words list (check name and title)
     const existing = words.find(
       (w) => w.name.toLowerCase() === cleanWord.toLowerCase() || (w as any).title?.toLowerCase() === cleanWord.toLowerCase()
@@ -228,8 +247,10 @@ export default function App() {
       setSelectedCategory('all');
       setSelectedTermId(existing.id);
       setHighlightedTermIds([existing.id]);
-      setToastMessage(`「${existing.name}」は既に登録されています。ベルカーブ上の位置を選択・表示しました！`);
-      setTimeout(() => setToastMessage(null), 4000);
+      setToast({
+        type: 'info',
+        message: `「${existing.name}」は既に登録されています。ベルカーブ上の位置を選択・表示しました！`,
+      });
       return;
     }
 
@@ -248,21 +269,23 @@ export default function App() {
       setHighlightedTermIds([term.id]);
 
       const stageName = STAGES[term.stage]?.name || 'イノベーター理論';
-      setToastMessage(
-        `「${term.name}」をモデル「${model}」で分析し、ベルカーブ上に正式追加しました！（${stageName} / 普及度 ${term.stageProgress}%）`
-      );
-      setTimeout(() => setToastMessage(null), 5000);
+      setToast({
+        type: 'success',
+        message: `「${term.name}」をモデル「${model}」で分析し、ベルカーブ上に正式追加しました！（${stageName} / 普及度 ${term.stageProgress}%）`,
+      });
       setTimeout(() => {
         setHighlightedTermIds((prev) => prev.filter((id) => id !== term.id));
       }, 15000);
     } catch (err: any) {
-      console.error('Client analyze error:', err);
+      console.error('Google API Error during analyze:', err);
       const errMsg = err?.message || '単語の分析に失敗しました。';
-      setToastMessage(`⚠️ ${errMsg}`);
-      if (!getClientGeminiApiKey()) {
+      setToast({
+        type: 'error',
+        message: errMsg,
+      });
+      if (!getClientGeminiApiKey() || errMsg.includes('APIキー') || errMsg.includes('400') || errMsg.includes('403')) {
         setApiKeyModalOpen(true);
       }
-      setTimeout(() => setToastMessage(null), 6000);
     } finally {
       setIsAnalyzing(false);
     }
@@ -289,8 +312,7 @@ export default function App() {
     });
 
     const termName = termToDelete?.name || '単語';
-    setToastMessage(`「${termName}」をベルカーブから削除しました`);
-    setTimeout(() => setToastMessage(null), 3500);
+    setToast({ type: 'info', message: `「${termName}」をベルカーブから削除しました` });
   }, [words]);
 
   // Reset to default terms
@@ -298,8 +320,7 @@ export default function App() {
     setWords(INITIAL_TERMS);
     setSelectedTermId('mcp');
     setSelectedCategory('all');
-    setToastMessage('初期の単語リストに復元しました');
-    setTimeout(() => setToastMessage(null), 3000);
+    setToast({ type: 'info', message: '初期の単語リストに復元しました' });
   };
 
   // Open Theory modal
@@ -340,20 +361,52 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Toast alert when new term is analyzed, watched, or deleted */}
-        {toastMessage && (
-          <div className="bg-gradient-to-r from-indigo-950/90 to-cyan-950/90 border border-indigo-500/50 text-indigo-200 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium flex items-center justify-between shadow-lg shadow-indigo-500/10 animate-fade-in">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
-              <span>{toastMessage}</span>
-            </div>
-            <button
-              onClick={() => setToastMessage(null)}
-              className="text-slate-400 hover:text-white text-xs underline cursor-pointer ml-3"
+        {/* Honest Error & Status Toast Alert Banner */}
+        {toast && (
+          toast.type === 'error' ? (
+            <div 
+              id="error-alert-banner"
+              className="bg-rose-950/95 border-2 border-rose-500/80 text-rose-100 px-4 py-3 rounded-xl text-xs sm:text-sm font-medium flex items-start sm:items-center justify-between shadow-xl shadow-rose-950/60 animate-fade-in"
             >
-              閉じる
-            </button>
-          </div>
+              <div className="flex items-start sm:items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <span className="font-bold text-rose-300 mr-2">【エラー】</span>
+                  <span className="text-rose-100 font-mono sm:font-sans break-all">{toast.message}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <button
+                  onClick={() => setApiKeyModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  設定を開く
+                </button>
+                <button
+                  onClick={() => setToast(null)}
+                  className="text-rose-300 hover:text-white p-1 rounded hover:bg-rose-900/50 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div 
+              id="info-toast-banner"
+              className="bg-gradient-to-r from-indigo-950/90 to-cyan-950/90 border border-indigo-500/50 text-indigo-200 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium flex items-center justify-between shadow-lg shadow-indigo-500/10 animate-fade-in"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <span>{toast.message}</span>
+              </div>
+              <button
+                onClick={() => setToast(null)}
+                className="text-slate-400 hover:text-white text-xs underline cursor-pointer ml-3"
+              >
+                閉じる
+              </button>
+            </div>
+          )
         )}
 
         {/* 2. Upper Main: Innovator Theory Bell Curve Map */}
