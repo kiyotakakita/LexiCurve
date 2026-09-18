@@ -10,7 +10,8 @@ import {
   Info,
   TrendingUp,
   X,
-  Bookmark
+  Bookmark,
+  Flame
 } from 'lucide-react';
 import { CategoryId, TermData } from '../types';
 import { CATEGORIES } from '../data/stages';
@@ -24,6 +25,8 @@ interface HeaderProps {
   onShowTheoryInfo: () => void;
   watchlistCount: number;
   onOpenWatchlist: () => void;
+  onScanTrending: () => void;
+  isScanningTrending: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,6 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
   onShowTheoryInfo,
   watchlistCount,
   onOpenWatchlist,
+  onScanTrending,
+  isScanningTrending,
 }) => {
   const [searchValue, setSearchValue] = useState('');
 
@@ -92,6 +97,17 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile Action Buttons */}
             <div className="flex items-center gap-1.5 lg:hidden">
               <button
+                id="scan-trending-mobile-btn"
+                onClick={onScanTrending}
+                disabled={isScanningTrending}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold shadow-sm active:scale-95 disabled:opacity-50"
+                title="🔥 最新の急上昇ワードをAIスキャン"
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400 animate-pulse" />
+                <span>AI急上昇</span>
+              </button>
+
+              <button
                 id="watchlist-mobile-btn"
                 onClick={onOpenWatchlist}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-medium"
@@ -112,9 +128,20 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Search Bar & Quick Input */}
-          <div className="flex items-center gap-2 flex-1 lg:max-w-md">
-            <form onSubmit={handleSubmit} className="relative w-full">
+          {/* Search Bar & Quick Input & Trending Scan */}
+          <div className="flex items-center gap-2 flex-1 lg:max-w-2xl">
+            <button
+              id="scan-trending-desktop-btn"
+              onClick={onScanTrending}
+              disabled={isScanningTrending}
+              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-200 hover:text-white bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-indigo-500/20 hover:from-amber-500/35 hover:via-rose-500/35 hover:to-indigo-500/35 border border-amber-500/50 hover:border-amber-400 rounded-xl transition-all whitespace-nowrap cursor-pointer shadow-md shadow-amber-500/10 active:scale-95 disabled:opacity-50 group"
+              title="AIがネット・SNSを探索し、最新の旬なバズワード（Vibe Coding, AI Slop等）を一括発掘"
+            >
+              <Flame className="w-4 h-4 text-amber-400 fill-amber-400 group-hover:scale-110 transition-transform animate-pulse" />
+              <span>🔥 最新の急上昇ワードをAIスキャン</span>
+            </button>
+
+            <form onSubmit={handleSubmit} className="relative flex-1">
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
                 <input

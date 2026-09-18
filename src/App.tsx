@@ -24,6 +24,7 @@ import { InsightPanel } from './components/InsightPanel';
 import { TheoryModal } from './components/TheoryModal';
 import { AnalyzingOverlay } from './components/AnalyzingOverlay';
 import { WatchlistDrawer } from './components/WatchlistDrawer';
+import { TrendingScanModal } from './components/TrendingScanModal';
 
 const LOCAL_STORAGE_WATCHLIST_KEY = 'lexicurve_watchlist_ids_v1';
 const LOCAL_STORAGE_CUSTOM_TERMS_KEY = 'lexicurve_custom_terms_v1';
@@ -86,10 +87,79 @@ export default function App() {
   const [selectedTermId, setSelectedTermId] = useState<string>('mcp');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analyzingWord, setAnalyzingWord] = useState<string>('');
+  const [isScanningTrending, setIsScanningTrending] = useState<boolean>(false);
+  const [highlightedTermIds, setHighlightedTermIds] = useState<string[]>([]);
   const [theoryModalOpen, setTheoryModalOpen] = useState<boolean>(false);
   const [theoryModalTab, setTheoryModalTab] = useState<'theory' | 'chasm'>('theory');
   const [watchlistOpen, setWatchlistOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Scan trending buzzwords via AI
+  const handleScanTrending = async () => {
+    setIsScanningTrending(true);
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch('/api/scan-trending-words', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      let trendingTerms: TermData[] = [];
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.terms)) {
+          trendingTerms = data.terms.map((t: TermData) => ({
+            ...t,
+            isCustom: true,
+            isTrending: true,
+          }));
+        }
+      }
+
+      // Ensure minimum 2.3 seconds for scanning animation to play smoothly
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 2300) {
+        await new Promise((r) => setTimeout(r, 2300 - elapsed));
+      }
+
+      if (trendingTerms.length > 0) {
+        // Merge into custom terms, avoiding duplicates
+        setCustomTerms((prev) => {
+          const newMap = new Map<string, TermData>();
+          trendingTerms.forEach((t) => newMap.set(t.id, t));
+          prev.forEach((t) => {
+            if (!newMap.has(t.id)) newMap.set(t.id, t);
+          });
+          return Array.from(newMap.values());
+        });
+
+        const newIds = trendingTerms.map((t) => t.id);
+        setHighlightedTermIds(newIds);
+
+        // Select the first trending term (e.g. Vibe Coding)
+        if (trendingTerms[0]) {
+          setSelectedTermId(trendingTerms[0].id);
+        }
+
+        setToastMessage(
+          `🔥 最新の急上昇ワード ${trendingTerms.length} 件（Vibe Coding, AI Slop, ブレインロット等）をAIスキャンし、ベルカーブ上に一括プロットしました！`
+        );
+        setTimeout(() => setToastMessage(null), 6000);
+
+        // Keep highlighted animation for 18 seconds
+        setTimeout(() => {
+          setHighlightedTermIds([]);
+        }, 18000);
+      }
+    } catch (err) {
+      console.error('Error scanning trending words:', err);
+      setToastMessage('最新トレンドのスキャン中にエラーが発生しました');
+      setTimeout(() => setToastMessage(null), 3000);
+    } finally {
+      setIsScanningTrending(false);
+    }
+  };
 
   // Selected term object
   const selectedTerm = useMemo(() => {
@@ -202,6 +272,8 @@ export default function App() {
         onShowTheoryInfo={() => handleOpenTheory('theory')}
         watchlistCount={watchlistIds.length}
         onOpenWatchlist={() => setWatchlistOpen(true)}
+        onScanTrending={handleScanTrending}
+        isScanningTrending={isScanningTrending}
       />
 
       {/* Main Container */}
@@ -230,6 +302,7 @@ export default function App() {
             selectedTerm={selectedTerm}
             onSelectTerm={(term) => setSelectedTermId(term.id)}
             onShowChasmInfo={() => handleOpenTheory('chasm')}
+            highlightedTermIds={highlightedTermIds}
           />
         </section>
 
@@ -340,6 +413,11 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Real-time Trend Discovery Radar Scanner Modal */}
+      <TrendingScanModal
+        isOpen={isScanningTrending}
+      />
 
       {/* Theory & Chasm Explanation Modal */}
       <TheoryModal

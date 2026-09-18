@@ -20,6 +20,7 @@ interface BellCurveMapProps {
   selectedTerm: TermData | null;
   onSelectTerm: (term: TermData) => void;
   onShowChasmInfo?: () => void;
+  highlightedTermIds?: string[];
 }
 
 export const BellCurveMap: React.FC<BellCurveMapProps> = ({
@@ -28,6 +29,7 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
   selectedTerm,
   onSelectTerm,
   onShowChasmInfo,
+  highlightedTermIds = [],
 }) => {
   const [hoveredTerm, setHoveredTerm] = useState<TermData | null>(null);
   const [hoveredZone, setHoveredZone] = useState<StageId | null>(null);
@@ -539,15 +541,30 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
             }
 
             // Estimate badge width
-            const approxTextWidth = term.name.length * 9.5 + 32;
-            const badgeW = Math.max(90, Math.min(220, approxTextWidth));
+            const isTrending = term.isTrending || highlightedTermIds.includes(term.id);
+            const approxTextWidth = term.name.length * 9.5 + (isTrending ? 42 : 32);
+            const badgeW = Math.max(90, Math.min(230, approxTextWidth));
             const badgeH = 26;
 
+            const finalBorder = isSelected 
+              ? '#ffffff' 
+              : isTrending 
+              ? '#f59e0b' 
+              : badgeBorder;
+
             return (
-              <g
+              <motion.g
                 key={term.id}
                 id={`term-pin-${term.id}`}
-                className="cursor-pointer transition-transform duration-200"
+                initial={{ opacity: 0, y: -25, scale: 0.8 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{
+                  type: 'spring',
+                  damping: 18,
+                  stiffness: 260,
+                  delay: Math.min(0.5, (term.stageProgress % 15) * 0.03),
+                }}
+                className="cursor-pointer"
                 onClick={() => onSelectTerm(term)}
                 onMouseEnter={() => setHoveredTerm(term)}
                 onMouseLeave={() => setHoveredTerm(null)}
@@ -558,37 +575,37 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                   y1={term.pinY + badgeH / 2}
                   x2={term.x}
                   y2={term.curveY}
-                  stroke={isSelected ? stageConfig.color : '#64748b'}
-                  strokeWidth={isSelected ? '2' : '1'}
+                  stroke={isSelected ? stageConfig.color : isTrending ? '#f59e0b' : '#64748b'}
+                  strokeWidth={isSelected ? '2' : isTrending ? '1.5' : '1'}
                   strokeDasharray={isSelected ? 'none' : '2 2'}
-                  strokeOpacity={isSelected ? '0.9' : '0.6'}
+                  strokeOpacity={isSelected ? '0.9' : isTrending ? '0.85' : '0.6'}
                 />
 
                 {/* Point on the curve itself */}
                 <circle
                   cx={term.x}
                   cy={term.curveY}
-                  r={isSelected ? 6 : 4}
-                  fill={stageConfig.color}
+                  r={isSelected ? 6 : isTrending ? 5 : 4}
+                  fill={isTrending ? '#f59e0b' : stageConfig.color}
                   stroke="#0f172a"
                   strokeWidth={2}
                 />
-                {isSelected && (
+                {(isSelected || isTrending) && (
                   <circle
                     cx={term.x}
                     cy={term.curveY}
-                    r={10}
+                    r={isSelected ? 10 : 8}
                     fill="none"
-                    stroke={stageConfig.color}
+                    stroke={isSelected ? stageConfig.color : '#f59e0b'}
                     strokeWidth={1.5}
-                    strokeOpacity={0.6}
+                    strokeOpacity={0.7}
                   />
                 )}
 
                 {/* Pin Badge Container */}
                 <g transform={`translate(${term.x - badgeW / 2}, ${term.pinY})`}>
                   {/* Near chasm indicator badge on top */}
-                  {term.nearChasm && (
+                  {term.nearChasm ? (
                     <g transform={`translate(${badgeW / 2}, -10)`}>
                       <rect
                         x="-40"
@@ -611,7 +628,30 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                         ⚡ キャズム直前
                       </text>
                     </g>
-                  )}
+                  ) : isTrending ? (
+                    <g transform={`translate(${badgeW / 2}, -10)`}>
+                      <rect
+                        x="-34"
+                        y="-8"
+                        width="68"
+                        height="16"
+                        rx="8"
+                        fill="#b45309"
+                        stroke="#f59e0b"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x="0"
+                        y="4"
+                        fill="#fff"
+                        fontSize="9"
+                        fontWeight="700"
+                        textAnchor="middle"
+                      >
+                        🔥 急上昇
+                      </text>
+                    </g>
+                  ) : null}
 
                   {/* Main Pin Pill */}
                   <rect
@@ -621,33 +661,43 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                     height={badgeH}
                     rx="13"
                     fill={badgeBg}
-                    stroke={badgeBorder}
-                    strokeWidth={isSelected ? '2' : '1.2'}
+                    stroke={finalBorder}
+                    strokeWidth={isSelected ? '2' : isTrending ? '1.5' : '1.2'}
                     filter={glowFilter}
                     className="transition-colors duration-150"
                   />
 
-                  {/* Category color indicator dot */}
-                  <circle
-                    cx="12"
-                    cy={badgeH / 2}
-                    r="4"
-                    fill={stageConfig.color}
-                  />
+                  {/* Category color indicator dot or flame */}
+                  {isTrending ? (
+                    <text
+                      x="7"
+                      y={badgeH / 2 + 4}
+                      fontSize="11"
+                    >
+                      🔥
+                    </text>
+                  ) : (
+                    <circle
+                      cx="12"
+                      cy={badgeH / 2}
+                      r="4"
+                      fill={stageConfig.color}
+                    />
+                  )}
 
                   {/* Term Name */}
                   <text
-                    x="22"
+                    x={isTrending ? "23" : "22"}
                     y={badgeH / 2 + 4}
-                    fill={isSelected ? '#ffffff' : badgeText}
+                    fill={isSelected ? '#ffffff' : isTrending ? '#fef3c7' : badgeText}
                     fontSize="11.5"
-                    fontWeight={isSelected ? '700' : '600'}
+                    fontWeight={isSelected || isTrending ? '700' : '600'}
                     fontFamily="system-ui, -apple-system, sans-serif"
                   >
                     {term.name.length > 14 ? term.name.substring(0, 13) + '…' : term.name}
                   </text>
                 </g>
-              </g>
+              </motion.g>
             );
           })}
         </svg>

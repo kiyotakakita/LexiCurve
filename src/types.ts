@@ -89,4 +89,5 @@ export interface TermData {
   semanticShift?: SemanticShift;
   tags: string[];
   isCustom?: boolean;
+  isTrending?: boolean;
 }
