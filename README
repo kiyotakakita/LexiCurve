@@ -1,0 +1,61 @@
+# 📈 LexiCurve (レキシカーブ)
+
+> **新造語・バズワードの浸透度 ＆ 源流可視化マップ**  
+> 「その新しい概念はどこで生まれ、どうやってあなたに届いたのか？」をイノベーター理論で読み解く知的ダッシュボード。
+
+[![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-black?style=flat&logo=vercel)](https://lexi-curve.vercel.app)
+[![React](https://img.shields.io/badge/React-18-blue?style=flat&logo=react)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-Build-646CFF?style=flat&logo=vite)](https://vitejs.dev/)
+[![Gemini API](https://img.shields.io/badge/Powered_by-Google_Gemini_API-orange?style=flat&logo=google)](https://ai.google.dev/)
+
+---
+
+## 💡 概要
+
+「インタースティシャル・ジャーナリング」や「Vibe Coding」のような新しいバズワードやライフハック。  
+それらは、どこかのニッチな海外コミュニティで生まれ、ギーク層に翻訳され、やがて大衆に消費されていきます。
+
+**LexiCurve** は、そうした新造語が**「イノベーター理論のどの層にいるか」**、そして**「どんな経路を辿って今ここにあるのか（源流ジャーニー）」**をリアルタイムに視覚化・分析するWebアプリケーションです。
+
+---
+
+## ✨ 主な機能
+
+- 📊 **イノベーター理論ベルカーブ（浸透度マップ）**
+  - 単語が「イノベーター (2.5%)」「アーリーアダプター (13.5%)」「キャズムの溝」「アーリーマジョリティ」「レイトマジョリティ」「ラガード」のどこに位置するかを直感的にプロット。
+- 🌊 **言葉の源流ジャーニー (Word Stream)**
+  - 発祥の地（海外ブログ・論文・Reddit）➔ 翻訳・ギーク層への伝播 ➔ 一般ビジネス・メディアへの到達プロセスを可視化。
+- 🔥 **AI急上昇スキャン (Google Gemini連動)**
+  - ボタン1つで、いまテック界隈やSNSで話題になり始めているホットな新造語を自動探索してマップに一括プロット。
+- 🛡️ **通じる度チェッカー (Audience Safety)**
+  - 「社内プレゼンで使って通じるか？」「クライアント向けに言い換えるべきか？」をAIが判定。
+- 🏷️ **マルチカテゴリ対応**
+  - AI・テクノロジー、生産性・ライフハック、ビジネス・働き方、カルチャー・若者言葉などのタブ切り替えに対応。
+
+---
+
+## 🛠️ 技術スタック
+
+- **Frontend:** React / Vite / TypeScript
+- **Styling:** Tailwind CSS / Lucide Icons
+- **AI & API:** Google Gemini API (`gemini-flash-latest`)
+- **Deployment:** Vercel
+
+---
+
+## 🚀 ローカルでの動かし方
+
+### 1. リポジトリのクローン
+```bash
+git clone https://github.com/あなたのユーザー名/リポジトリ名.git
+cd リポジトリ名
+
+npm install --force
+
+
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+
+
+
+npm run dev
+
