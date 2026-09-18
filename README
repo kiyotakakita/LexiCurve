@@ -46,9 +46,8 @@
 ## 🚀 ローカルでの動かし方
 
 ### 1. リポジトリのクローン
-```bash
-git clone https://github.com/kiyotakakita/lexi-curve.git
-cd lexi-curve
+git clone https://github.com/kiyotakakita/LexiCurve.git
+cd LexiCurve
 
 npm install --force
 
