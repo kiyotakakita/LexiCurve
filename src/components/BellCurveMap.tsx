@@ -21,6 +21,8 @@ interface BellCurveMapProps {
   onSelectTerm: (term: TermData) => void;
   onShowChasmInfo?: () => void;
   highlightedTermIds?: string[];
+  onDeleteTerm?: (termId: string) => void;
+  onOpenDetailModal?: (term: TermData) => void;
 }
 
 export const BellCurveMap: React.FC<BellCurveMapProps> = ({
@@ -30,6 +32,8 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
   onSelectTerm,
   onShowChasmInfo,
   highlightedTermIds = [],
+  onDeleteTerm,
+  onOpenDetailModal,
 }) => {
   const [hoveredTerm, setHoveredTerm] = useState<TermData | null>(null);
   const [hoveredZone, setHoveredZone] = useState<StageId | null>(null);
@@ -542,8 +546,9 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
 
             // Estimate badge width
             const isTrending = term.isTrending || highlightedTermIds.includes(term.id);
+            const showDelete = Boolean(onDeleteTerm && (isSelected || isHovered));
             const approxTextWidth = term.name.length * 9.5 + (isTrending ? 42 : 32);
-            const badgeW = Math.max(90, Math.min(230, approxTextWidth));
+            const badgeW = Math.max(90, Math.min(240, approxTextWidth + (showDelete ? 22 : 0)));
             const badgeH = 26;
 
             const finalBorder = isSelected 
@@ -696,6 +701,36 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
                   >
                     {term.name.length > 14 ? term.name.substring(0, 13) + '…' : term.name}
                   </text>
+
+                  {/* Requirement 2: Delete "×" button on badge on hover or select */}
+                  {showDelete && (
+                    <g
+                      id={`pin-delete-${term.id}`}
+                      className="cursor-pointer group/del"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteTerm?.(term.id);
+                      }}
+                      transform={`translate(${badgeW - 13}, ${badgeH / 2})`}
+                    >
+                      <title>この単語をグラフから削除</title>
+                      <circle
+                        cx="0"
+                        cy="0"
+                        r="7"
+                        fill="#be123c"
+                        stroke="#f43f5e"
+                        strokeWidth="1"
+                        className="hover:fill-rose-500 hover:scale-110 transition-transform"
+                      />
+                      <path
+                        d="M -2.5 -2.5 L 2.5 2.5 M 2.5 -2.5 L -2.5 2.5"
+                        stroke="#ffffff"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </g>
+                  )}
                 </g>
               </motion.g>
             );
@@ -710,11 +745,13 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.96 }}
               transition={{ duration: 0.15 }}
-              className="absolute pointer-events-none z-50 bg-[#161b22] border border-slate-700/80 rounded-xl p-3.5 shadow-2xl backdrop-blur-xl w-72 text-left"
+              className="absolute z-50 bg-[#161b22] border border-slate-700/80 rounded-xl p-3.5 shadow-2xl backdrop-blur-xl w-72 text-left"
               style={{
                 left: `${Math.max(10, Math.min(75, hoveredTerm.stageProgress))}%`,
                 top: '20px',
               }}
+              onMouseEnter={() => setHoveredTerm(hoveredTerm)}
+              onMouseLeave={() => setHoveredTerm(null)}
             >
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
@@ -733,7 +770,31 @@ export const BellCurveMap: React.FC<BellCurveMapProps> = ({
               <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                 <span>通じる度: <strong className="text-cyan-300">{hoveredTerm.insights.comprehensionScore}%</strong></span>
                 <span>誕生: <strong className="text-slate-200">{hoveredTerm.firstAppearedYear}年</strong></span>
-                <span className="text-indigo-400 font-medium">クリックで詳細 ↗</span>
+                <div className="flex items-center gap-2">
+                  {onOpenDetailModal && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDetailModal(hoveredTerm);
+                      }}
+                      className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+                    >
+                      詳細 ↗
+                    </button>
+                  )}
+                  {onDeleteTerm && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteTerm(hoveredTerm.id);
+                      }}
+                      className="text-rose-400 hover:text-rose-300 font-medium cursor-pointer flex items-center gap-0.5"
+                      title="この単語をグラフから削除"
+                    >
+                      削除 ×
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}

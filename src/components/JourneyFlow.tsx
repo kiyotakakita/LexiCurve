@@ -11,7 +11,8 @@ import {
   FileText,
   Sparkles,
   ArrowRight,
-  Bookmark
+  Bookmark,
+  Trash2
 } from 'lucide-react';
 import { TermData, JourneyStep } from '../types';
 import { STAGES } from '../data/stages';
@@ -21,12 +22,16 @@ interface JourneyFlowProps {
   term: TermData;
   isWatched?: boolean;
   onToggleWatch?: () => void;
+  onDeleteTerm?: (termId: string) => void;
+  onOpenDetailModal?: () => void;
 }
 
 export const JourneyFlow: React.FC<JourneyFlowProps> = ({ 
   term,
   isWatched = false,
-  onToggleWatch
+  onToggleWatch,
+  onDeleteTerm,
+  onOpenDetailModal,
 }) => {
   const getPhaseIcon = (phase: JourneyStep['phase']) => {
     switch (phase) {
@@ -111,6 +116,31 @@ export const JourneyFlow: React.FC<JourneyFlowProps> = ({
               >
                 <Bookmark className={`w-3.5 h-3.5 ${isWatched ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                 <span>{isWatched ? '★ ウォッチ中' : '★ ウォッチする'}</span>
+              </button>
+            )}
+
+            {onOpenDetailModal && (
+              <button
+                id="journey-open-detail-modal-btn"
+                onClick={onOpenDetailModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 transition-colors cursor-pointer"
+                title="ポップアップモーダルで詳細を開く"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                <span>詳細モーダル</span>
+              </button>
+            )}
+
+            {/* Requirement 2: Delete button in detail section */}
+            {onDeleteTerm && (
+              <button
+                id="journey-delete-term-btn"
+                onClick={() => onDeleteTerm(term.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-600 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="この単語をグラフから削除"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>この単語をグラフから削除</span>
               </button>
             )}
 
